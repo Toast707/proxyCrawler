@@ -1,22 +1,19 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
+import urllib2
+import threading
+import time
+import Queue
+from optparse import OptionParser
+
+import MySQLdb
+from scrapy.conf import settings
+from DBUtils.PooledDB import PooledDB
+
 USAGE = """This is s special daemon used for checking whether the IP proxy works.
 It can be managed by supervisor or some other tools, just make sure it works
 all the time."""
-
-import urllib
-import urllib2
-import httplib
-import threading
-import time
-import sys
-import os
-import MySQLdb
-from scrapy.conf import settings
-from optparse import OptionParser
-import Queue
-from DBUtils.PooledDB import PooledDB
 
 conn_pool = PooledDB(MySQLdb, 20, host=settings['MYSQL_HOST'], user=settings['MYSQL_USER'], passwd=settings['MYSQL_PASSWD'], db='ip_proxy', port=int(settings['MYSQL_PORT']))
 src_db_queue = Queue.Queue()
@@ -30,11 +27,8 @@ class IPPool(object):
         self.src_database = src_path
         self.dst_db = dst_path
 
-
-
-
     def check_one(self, handler, url):
-        if self.queue.empty() :
+        if self.queue.empty():
             load_to_queue(self.src_database)
             if self.queue.empty():
                 time.sleep(360)
@@ -42,17 +36,15 @@ class IPPool(object):
 
         res = self.queue.get()
 
-        print "%s %s:%s, try to check" % (res[2], res[0],
-                res[1])
-
+        print "%s %s:%s, try to check" % (res[2], res[0], res[1])
 
         ret, delay = handler(str(res[0]), str(res[1]), str(res[2]), url)
 
         if ret:
-            print "IP %s:%s delay:%s" % (res[0], res[1],delay)
+            print "IP %s:%s delay:%s" % (res[0], res[1], delay)
             conn = conn_pool.connection()
             cursor = conn.cursor()
-            sql_cmd = "insert into checked values (\"%s\",\"%s\",\"%s\",%s) on duplicate key update port=values(port), delay=values(delay)" % (res[0],res[1],res[2],delay)
+            sql_cmd = "insert into checked values (\"%s\",\"%s\",\"%s\",%s) on duplicate key update port=values(port), delay=values(delay)" % (res[0], res[1], res[2], delay)
             cursor.execute(sql_cmd)
             conn.commit()
             cursor.close()
@@ -63,17 +55,16 @@ class IPPool(object):
             conn = conn_pool.connection()
             cursor = conn.cursor()
             cursor.execute(sql_cmd)
-            sql_cmd = 'delete from %s where ip="%s"' %(self.src_database, res[0])
+            sql_cmd = 'delete from %s where ip="%s"' % (self.src_database, res[0])
             cursor.execute(sql_cmd)
             conn.commit()
             cursor.close()
             conn.close()
 
 
-
 def proxy_test(ip, port='80', protocol='http', url='http://www.douban.com'):
     proxy_url = protocol + '://' + ip + ':' + port
-    proxy_support = urllib2.ProxyHandler({'http':proxy_url})
+    proxy_support = urllib2.ProxyHandler({'http': proxy_url})
     opener = urllib2.build_opener(proxy_support, urllib2.HTTPHandler)
     request = urllib2.Request(url)
     request.add_header("Accept-Language", "zh-cn")
@@ -91,7 +82,7 @@ def proxy_test(ip, port='80', protocol='http', url='http://www.douban.com'):
                 #  break
                 return True, t2 - t1
             else:
-                return False,None
+                return False, None
         except:
             time.sleep(3)
             trycount = trycount + 1
@@ -100,15 +91,12 @@ def proxy_test(ip, port='80', protocol='http', url='http://www.douban.com'):
         return False, None
 
 
-
 class CheckTask(threading.Thread):
     def __init__(self, pool, handler, url):
         threading.Thread.__init__(self)
         self.pool = pool
-
         self.handler = handler
         self.url = url
-
 
     def run(self):
         while 1:
@@ -121,7 +109,6 @@ class ClickTask(threading.Thread):
         self.pool = pool
         self.handler = handler
         self.url = url
-
 
     def run(self):
         while 1:
@@ -137,7 +124,7 @@ def load_to_queue(path):
     if path == "unchecked":
         sql_cmd = "select * from unchecked"
         queue = src_db_queue
-    elif path  == "checked":
+    elif path == "checked":
         sql_cmd = "select * from checked "
         queue = dst_db_queue
     cursor.execute(sql_cmd)
@@ -149,16 +136,13 @@ def load_to_queue(path):
     connection.close()
 
 
-
-
 if __name__ == "__main__":
     load_to_queue('unchecked')
     load_to_queue('checked')
     pool1 = IPPool("unchecked", "checked", src_db_queue)
     pool2 = IPPool("checked", "checked", dst_db_queue)
 
-    parser = OptionParser(usage=USAGE,
-            version='0.0.1')
+    parser = OptionParser(usage=USAGE, version='0.0.1')
 
     parser.add_option("-n", "--number", dest="number",
             default='20', metavar='NUMBER',
@@ -196,5 +180,4 @@ if __name__ == "__main__":
 
     for task in tasks:
         task.join()
-
 
